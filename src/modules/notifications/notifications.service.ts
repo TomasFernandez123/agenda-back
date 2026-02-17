@@ -3,9 +3,33 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { InjectQueue } from '@nestjs/bull';
 import type { Queue } from 'bull';
+import { ConfigService } from '@nestjs/config';
 import { ReminderJob } from './schemas/reminder-job.schema';
 import { TenantsService } from '../tenants/tenants.service';
 import { addMinutes } from 'date-fns';
+import {
+  Appointment,
+  AppointmentSource,
+} from '../appointments/schemas/appointment.schema';
+import { EmailService } from './email.service';
+import { User, UserRole } from '../users/schemas/user.schema';
+import { AuthService } from '../auth/auth.service';
+
+type AppointmentEmailEvent = 'REQUESTED' | 'CONFIRMED' | 'CANCELLED';
+
+type EmailContact = {
+  name?: string;
+  email?: string;
+};
+
+type EmailServiceInfo = {
+  name?: string;
+};
+
+type EmailProfessionalInfo = {
+  displayName?: string;
+  userId?: EmailContact;
+};
 
 @Injectable()
 export class NotificationsService {
@@ -13,9 +37,247 @@ export class NotificationsService {
 
   constructor(
     @InjectModel(ReminderJob.name) private reminderJobModel: Model<ReminderJob>,
+    @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
+    @InjectModel(User.name) private userModel: Model<User>,
     @InjectQueue('reminders') private remindersQueue: Queue,
     private readonly tenantsService: TenantsService,
+    private readonly emailService: EmailService,
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
   ) {}
+
+  async sendAppointmentEventEmails(
+    tenantId: string,
+    appointmentId: string,
+    event: AppointmentEmailEvent,
+  ): Promise<void> {
+    try {
+      const appointment = await this.appointmentModel
+        .findById(appointmentId)
+        .populate('clientId', 'name email')
+        .populate('serviceId', 'name')
+        .populate({
+          path: 'professionalId',
+          select: 'displayName userId',
+          populate: { path: 'userId', select: 'name email' },
+        })
+        .lean();
+
+      if (!appointment) {
+        this.logger.warn(
+          `Appointment ${appointmentId} not found, skipping event email`,
+        );
+        return;
+      }
+
+      const [tenant, admins] = await Promise.all([
+        this.tenantsService.findById(tenantId),
+        this.userModel
+          .find({
+            tenantId: new Types.ObjectId(tenantId),
+            role: UserRole.ADMIN,
+            isActive: true,
+          })
+          .select('name email')
+          .lean(),
+      ]);
+
+      const client = (appointment.clientId || {}) as unknown as EmailContact;
+      const service = (appointment.serviceId ||
+        {}) as unknown as EmailServiceInfo;
+      const professional = (appointment.professionalId ||
+        {}) as unknown as EmailProfessionalInfo;
+      const staffUser = professional.userId;
+
+      const dateText = appointment.startAt.toLocaleDateString('es-AR');
+      const timeText = appointment.startAt.toLocaleTimeString('es-AR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const byEvent = {
+        REQUESTED: {
+          subject: 'Solicitud de turno registrada',
+          title: 'Se registró una solicitud de turno',
+          accent: '#2563eb',
+          badge: 'Solicitud',
+        },
+        CONFIRMED: {
+          subject: 'Turno confirmado',
+          title: 'El turno fue confirmado',
+          accent: '#059669',
+          badge: 'Confirmado',
+        },
+        CANCELLED: {
+          subject: 'Turno cancelado',
+          title: 'El turno fue cancelado',
+          accent: '#dc2626',
+          badge: 'Cancelado',
+        },
+      };
+
+      const eventData = byEvent[event];
+      const isPublicAppointment =
+        appointment.source === AppointmentSource.CLIENT;
+
+      const cancelToken = this.authService.generateActionToken(
+        appointmentId,
+        'cancel',
+      );
+      const cancelUrl = `${this.getPublicBaseUrl()}/public/appointments/${appointmentId}/cancel?token=${encodeURIComponent(cancelToken)}`;
+      const rescheduleToken = this.authService.generateActionToken(
+        appointmentId,
+        'reschedule',
+      );
+      const rescheduleUrl = this.buildRescheduleUrl(
+        appointmentId,
+        rescheduleToken,
+      );
+
+      const recipients = new Map<string, string>();
+      for (const admin of admins) {
+        if (admin.email) {
+          recipients.set(admin.email.trim().toLowerCase(), admin.email);
+        }
+      }
+      if (staffUser?.email) {
+        const staffEmail = staffUser.email.trim();
+        recipients.set(staffEmail.toLowerCase(), staffEmail);
+      }
+      if (client.email) {
+        const clientEmail = client.email.trim();
+        recipients.set(clientEmail.toLowerCase(), clientEmail);
+      }
+
+      const recipientList = [...recipients.values()];
+      const results = await Promise.allSettled(
+        recipientList.map((to) => {
+          const isClientRecipient =
+            !!client.email &&
+            to.trim().toLowerCase() === client.email.trim().toLowerCase();
+          const shouldAddPublicLinks =
+            isPublicAppointment &&
+            isClientRecipient &&
+            (event === 'REQUESTED' || event === 'CONFIRMED');
+
+          const linksText = shouldAddPublicLinks
+            ? `\n\nGestioná tu turno desde estos enlaces:\n- Cancelar turno: ${cancelUrl}${rescheduleUrl ? `\n- Reprogramar turno: ${rescheduleUrl}` : ''}`
+            : '';
+
+          const linksHtml = shouldAddPublicLinks
+            ? `
+              <tr>
+                <td style="padding:8px 24px 0 24px;color:#111827;font-size:14px;line-height:1.5;">
+                  <p style="margin:0 0 10px 0;">Gestioná tu turno desde estos enlaces:</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 24px 0 24px;">
+                  <a href="${cancelUrl}" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;margin-right:8px;margin-bottom:8px;">Cancelar turno</a>
+                  ${rescheduleUrl ? `<a href="${rescheduleUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;margin-bottom:8px;">Reprogramar turno</a>` : ''}
+                </td>
+              </tr>
+            `
+            : '';
+
+          const text = `${eventData.title}.\n\nNegocio: ${tenant.name}\nServicio: ${service?.name || 'N/A'}\nProfesional: ${professional?.displayName || 'N/A'}\nCliente: ${client?.name || 'N/A'}\nFecha: ${dateText}\nHora: ${timeText}.${linksText}`;
+
+          const html = `
+            <div style="margin:0;padding:0;background-color:#f3f4f6;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f3f4f6;padding:24px 12px;">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;font-family:Arial,sans-serif;">
+                      <tr>
+                        <td style="padding:22px 24px;background:${eventData.accent};color:#ffffff;">
+                          <div style="font-size:12px;letter-spacing:.04em;text-transform:uppercase;opacity:.9;margin-bottom:8px;">${tenant.name}</div>
+                          <div style="font-size:24px;line-height:1.25;font-weight:700;margin:0 0 10px 0;">${eventData.title}</div>
+                          <span style="display:inline-block;background:rgba(255,255,255,.18);padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;">${eventData.badge}</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:20px 24px 8px 24px;color:#111827;font-size:14px;line-height:1.5;">
+                          <p style="margin:0 0 12px 0;">Te compartimos el detalle del turno:</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:0 24px 10px 24px;">
+                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;">
+                            <tr>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;font-size:13px;font-weight:700;width:34%;">Negocio</td>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;color:#111827;font-size:14px;">${tenant.name}</td>
+                            </tr>
+                            <tr>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;font-size:13px;font-weight:700;">Servicio</td>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;color:#111827;font-size:14px;">${service?.name || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;font-size:13px;font-weight:700;">Profesional</td>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;color:#111827;font-size:14px;">${professional?.displayName || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;font-size:13px;font-weight:700;">Cliente</td>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;color:#111827;font-size:14px;">${client?.name || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;font-size:13px;font-weight:700;">Fecha</td>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;color:#111827;font-size:14px;">${dateText}</td>
+                            </tr>
+                            <tr>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;background:#f9fafb;color:#374151;font-size:13px;font-weight:700;">Hora</td>
+                              <td style="padding:10px 12px;border:1px solid #e5e7eb;color:#111827;font-size:14px;">${timeText}</td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      ${linksHtml}
+                      <tr>
+                        <td style="padding:12px 24px 22px 24px;color:#6b7280;font-size:12px;line-height:1.5;">
+                          Este es un correo automático. Si necesitás ayuda, comunicate con ${tenant.name}.
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </div>
+          `;
+
+          return this.emailService.sendEmail(tenantId, {
+            to,
+            subject: eventData.subject,
+            text,
+            html,
+          });
+        }),
+      );
+
+      let successCount = 0;
+      let failedCount = 0;
+
+      results.forEach((result, index) => {
+        const recipient = recipientList[index];
+        if (result.status === 'fulfilled') {
+          successCount += 1;
+          return;
+        }
+
+        failedCount += 1;
+        const reason = result.reason as Error;
+        this.logger.error(
+          `Appointment event email failed event=${event} appointment=${appointmentId} to=${recipient} reason=${reason?.message || 'unknown error'}`,
+        );
+      });
+
+      this.logger.log(
+        `Appointment event emails processed event=${event} appointment=${appointmentId} success=${successCount} failed=${failedCount}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to send appointment event emails for ${appointmentId}: ${(error as Error).message}`,
+      );
+    }
+  }
 
   /**
    * Schedule reminder jobs for an appointment based on tenant config.
@@ -49,13 +311,14 @@ export class NotificationsService {
           channel,
           status: 'pending',
         });
+        const reminderJobId = reminderJob._id.toString();
 
         // Add BullMQ delayed job
         const delay = scheduledFor.getTime() - Date.now();
         const job = await this.remindersQueue.add(
           'send-reminder',
           {
-            reminderJobId: (reminderJob as any)._id.toString(),
+            reminderJobId,
             tenantId,
             appointmentId,
             channel,
@@ -68,10 +331,9 @@ export class NotificationsService {
           },
         );
 
-        await this.reminderJobModel.findByIdAndUpdate(
-          (reminderJob as any)._id,
-          { bullJobId: job.id.toString() },
-        );
+        await this.reminderJobModel.findByIdAndUpdate(reminderJob._id, {
+          bullJobId: job.id.toString(),
+        });
 
         this.logger.log(
           `Scheduled ${channel} reminder for appointment ${appointmentId} at ${scheduledFor.toISOString()}`,
@@ -113,5 +375,27 @@ export class NotificationsService {
       .sort({ scheduledFor: -1 })
       .limit(100)
       .lean();
+  }
+
+  private getPublicBaseUrl(): string {
+    const explicit =
+      process.env.PUBLIC_APP_BASE_URL || process.env.FRONTEND_BASE_URL;
+    if (explicit?.trim()) {
+      return explicit.replace(/\/$/, '');
+    }
+
+    const corsOrigin = this.configService.get<string>('app.corsOrigin');
+    if (corsOrigin?.trim()) {
+      return corsOrigin.replace(/\/$/, '');
+    }
+
+    return 'http://localhost:4200';
+  }
+
+  private buildRescheduleUrl(
+    appointmentId: string,
+    token: string,
+  ): string | null {
+    return `${this.getPublicBaseUrl()}/public/appointments/${appointmentId}/reschedule?token=${encodeURIComponent(token)}`;
   }
 }

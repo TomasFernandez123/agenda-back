@@ -24,10 +24,23 @@ import { ServicesService } from '../services/services.service';
 import { ProfessionalsService } from '../professionals/professionals.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/schemas/audit-event.schema';
+import { TenantsService } from '../tenants/tenants.service';
+import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { CreatePublicAppointmentDto } from './dto/create-public-appointment.dto';
 
 @Injectable()
 export class AppointmentsService {
   private readonly logger = new Logger(AppointmentsService.name);
+
+  private validateStartAtIsFuture(startAt: Date): void {
+    if (Number.isNaN(startAt.getTime())) {
+      throw new BadRequestException('Invalid appointment request');
+    }
+    if (startAt <= new Date()) {
+      throw new BadRequestException('Appointment date must be in the future');
+    }
+  }
 
   constructor(
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
@@ -36,7 +49,168 @@ export class AppointmentsService {
     private readonly servicesService: ServicesService,
     private readonly professionalsService: ProfessionalsService,
     private readonly auditService: AuditService,
+    private readonly tenantsService: TenantsService,
+    private readonly usersService: UsersService,
+    private readonly notificationsService: NotificationsService,
   ) {}
+
+  async createPublicByTenantSlug(
+    slug: string,
+    dto: CreatePublicAppointmentDto,
+  ): Promise<{
+    appointmentId: string;
+    status: AppointmentStatus;
+    startAt: Date;
+    professional: { _id: string; displayName: string };
+    service: { _id: string; name: string; durationMinutes: number };
+    client: { name: string; email: string; phone: string };
+    message: string;
+  }> {
+    const tenant = await this.tenantsService.findBySlug(slug);
+    if (!tenant) {
+      throw new NotFoundException('Requested resource was not found');
+    }
+    const tenantObjectId = (tenant as any)._id as Types.ObjectId;
+    const tenantId = tenantObjectId.toString();
+
+    const startAt = new Date(dto.startAt);
+    this.validateStartAtIsFuture(startAt);
+
+    const [service, professional] = await Promise.all([
+      this.servicesService.findById(dto.serviceId),
+      this.professionalsService.findById(dto.professionalId),
+    ]);
+
+    if (service.tenantId.toString() !== tenantId) {
+      throw new NotFoundException('Requested resource was not found');
+    }
+    if (professional.tenantId.toString() !== tenantId) {
+      throw new NotFoundException('Requested resource was not found');
+    }
+
+    const endAt = addMinutes(startAt, service.durationMinutes);
+    const isAvailable = await this.availabilityService.isSlotAvailable(
+      tenantId,
+      dto.professionalId,
+      startAt,
+      endAt,
+    );
+    if (!isAvailable) {
+      throw new ConflictException('Selected time slot is not available');
+    }
+
+    const client = await this.usersService.findOrCreateClientForTenant({
+      tenantId,
+      name: dto.guestName,
+      email: dto.guestEmail,
+      phone: dto.guestPhone,
+    });
+    const clientObjectId = (client as any)._id as Types.ObjectId;
+
+    let depositStatus = DepositStatus.NOT_REQUIRED;
+    if (service.deposit?.enabled) {
+      depositStatus = DepositStatus.PENDING;
+    }
+
+    const session = await this.connection.startSession();
+    try {
+      let createdAppointmentId: string | null = null;
+
+      await session.withTransaction(async () => {
+        const overlap = await this.appointmentModel.findOne(
+          {
+            tenantId: tenantObjectId,
+            professionalId: new Types.ObjectId(dto.professionalId),
+            status: {
+              $in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
+            },
+            startAt: { $lt: endAt },
+            endAt: { $gt: startAt },
+          },
+          null,
+          { session },
+        );
+
+        if (overlap) {
+          throw new ConflictException('Selected time slot is not available');
+        }
+
+        const [created] = await this.appointmentModel.create(
+          [
+            {
+              tenantId: tenantObjectId,
+              professionalId: new Types.ObjectId(dto.professionalId),
+              serviceId: new Types.ObjectId(dto.serviceId),
+              clientId: new Types.ObjectId(clientObjectId),
+              startAt,
+              endAt,
+              status: AppointmentStatus.PENDING,
+              notesInternal: dto.notesInternal,
+              depositStatus,
+              source: AppointmentSource.CLIENT,
+            },
+          ],
+          { session },
+        );
+
+        createdAppointmentId = created._id.toString();
+      });
+
+      if (!createdAppointmentId) {
+        throw new ConflictException('Could not process appointment request');
+      }
+
+      await this.notificationsService.scheduleReminders(
+        tenantId,
+        createdAppointmentId,
+        startAt,
+      );
+
+      await this.notificationsService.sendAppointmentEventEmails(
+        tenantId,
+        createdAppointmentId,
+        'REQUESTED',
+      );
+
+      await this.auditService.log(
+        tenantId,
+        null,
+        AuditAction.APPOINTMENT_CREATED_PUBLIC,
+        'Appointment',
+        createdAppointmentId,
+        {
+          startAt,
+          endAt,
+          serviceId: dto.serviceId,
+          professionalId: dto.professionalId,
+          source: 'PUBLIC',
+        },
+      );
+
+      return {
+        appointmentId: createdAppointmentId,
+        status: AppointmentStatus.PENDING,
+        startAt,
+        professional: {
+          _id: (professional as any)._id.toString(),
+          displayName: professional.displayName,
+        },
+        service: {
+          _id: (service as any)._id.toString(),
+          name: service.name,
+          durationMinutes: service.durationMinutes,
+        },
+        client: {
+          name: client.name,
+          email: client.email,
+          phone: client.phone,
+        },
+        message: 'Solicitud registrada correctamente',
+      };
+    } finally {
+      await session.endSession();
+    }
+  }
 
   /**
    * Create appointment with transactional overlap prevention.
@@ -49,6 +223,7 @@ export class AppointmentsService {
     // 1. Validate service exists and get duration
     const service = await this.servicesService.findById(dto.serviceId);
     const startAt = new Date(dto.startAt);
+    this.validateStartAtIsFuture(startAt);
     const endAt = addMinutes(startAt, service.durationMinutes);
 
     // 2. Check professional availability
@@ -136,6 +311,18 @@ export class AppointmentsService {
         },
       );
 
+      await this.notificationsService.scheduleReminders(
+        tenantId,
+        (appointment as any)._id.toString(),
+        startAt,
+      );
+
+      await this.notificationsService.sendAppointmentEventEmails(
+        tenantId,
+        (appointment as any)._id.toString(),
+        'REQUESTED',
+      );
+
       return appointment;
     } finally {
       await session.endSession();
@@ -145,8 +332,12 @@ export class AppointmentsService {
   async findAll(
     tenantId: string,
     query: QueryAppointmentsDto,
+    clientUserId?: string,
   ): Promise<Appointment[]> {
     const filter: any = { tenantId: new Types.ObjectId(tenantId) };
+    if (clientUserId) {
+      filter.clientId = new Types.ObjectId(clientUserId);
+    }
     if (query.professionalId)
       filter.professionalId = new Types.ObjectId(query.professionalId);
     if (query.status) filter.status = query.status;
@@ -191,6 +382,13 @@ export class AppointmentsService {
       'Appointment',
       id,
     );
+
+    await this.notificationsService.sendAppointmentEventEmails(
+      appointment.tenantId.toString(),
+      id,
+      'CONFIRMED',
+    );
+
     return appointment;
   }
 
@@ -215,6 +413,8 @@ export class AppointmentsService {
     appointment.status = AppointmentStatus.CANCELLED;
     await appointment.save();
 
+    await this.notificationsService.cancelReminders(id);
+
     await this.auditService.log(
       appointment.tenantId.toString(),
       actorUserId || null,
@@ -222,6 +422,13 @@ export class AppointmentsService {
       'Appointment',
       id,
     );
+
+    await this.notificationsService.sendAppointmentEventEmails(
+      appointment.tenantId.toString(),
+      id,
+      'CANCELLED',
+    );
+
     return appointment;
   }
 
@@ -252,6 +459,7 @@ export class AppointmentsService {
       appointment.serviceId.toString(),
     );
     const newStartAt = new Date(dto.startAt);
+    this.validateStartAtIsFuture(newStartAt);
     const newEndAt = addMinutes(newStartAt, service.durationMinutes);
 
     // Check availability
@@ -336,6 +544,28 @@ export class AppointmentsService {
       id,
     );
     return appointment;
+  }
+
+  async remove(
+    id: string,
+    actorUserId?: string,
+  ): Promise<{ deleted: boolean; id: string }> {
+    const appointment = await this.appointmentModel.findById(id);
+    if (!appointment) throw new NotFoundException('Appointment not found');
+
+    await this.notificationsService.cancelReminders(id);
+    await this.appointmentModel.findByIdAndDelete(id);
+
+    await this.auditService.log(
+      appointment.tenantId.toString(),
+      actorUserId || null,
+      AuditAction.APPOINTMENT_CANCELLED,
+      'Appointment',
+      id,
+      { hardDeleted: true, previousStatus: appointment.status },
+    );
+
+    return { deleted: true, id };
   }
 
   async updateNotes(id: string, notesInternal?: string): Promise<Appointment> {

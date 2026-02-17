@@ -8,6 +8,9 @@ import { ServicesModule } from '../services/services.module';
 import { ProfessionalsModule } from '../professionals/professionals.module';
 import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
+import { TenantsModule } from '../tenants/tenants.module';
+import { UsersModule } from '../users/users.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -17,6 +20,9 @@ import { AuthModule } from '../auth/auth.module';
     ProfessionalsModule,
     AuditModule,
     AuthModule,
+    TenantsModule,
+    UsersModule,
+    NotificationsModule,
   ],
   controllers: [AppointmentsController],
   providers: [AppointmentsService],

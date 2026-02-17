@@ -32,6 +32,13 @@ export class ProfessionalsService {
       .lean();
   }
 
+  async findActiveByTenantId(tenantId: string): Promise<Professional[]> {
+    return this.professionalModel
+      .find({ tenantId: new Types.ObjectId(tenantId), isActive: true })
+      .populate('userId', 'name email phone')
+      .lean();
+  }
+
   async findById(id: string): Promise<Professional> {
     const prof = await this.professionalModel.findById(id).populate('userId', 'name email phone').lean();
     if (!prof) throw new NotFoundException('Professional not found');

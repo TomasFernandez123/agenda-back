@@ -17,6 +17,19 @@ import {
 export class UsersService {
   constructor(@InjectModel(User.name) private userModel: Model<User>) {}
 
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
+  private normalizePhone(phone?: string): string | undefined {
+    if (!phone) return undefined;
+    const trimmed = phone.trim();
+    const hasPlus = trimmed.startsWith('+');
+    const digits = trimmed.replace(/\D/g, '');
+    if (!digits) return undefined;
+    return `${hasPlus ? '+' : ''}${digits}`;
+  }
+
   async create(tenantId: string, dto: CreateUserDto): Promise<User> {
     const tenantObjId = new Types.ObjectId(tenantId);
     const existing = await this.userModel
@@ -75,13 +88,74 @@ export class UsersService {
   }
 
   async findByEmail(email: string, tenantId?: string): Promise<User | null> {
-    const query: any = { email };
+    const query: any = { email: this.normalizeEmail(email) };
     if (tenantId) query.tenantId = new Types.ObjectId(tenantId);
     return this.userModel.findOne(query).lean();
   }
 
   async findByEmailGlobal(email: string): Promise<User | null> {
-    return this.userModel.findOne({ email }).lean();
+    return this.userModel.findOne({ email: this.normalizeEmail(email) }).lean();
+  }
+
+  async findOrCreateClientForTenant(params: {
+    tenantId: string;
+    name: string;
+    email: string;
+    phone: string;
+  }): Promise<User> {
+    const normalizedEmail = this.normalizeEmail(params.email);
+    const normalizedPhone = this.normalizePhone(params.phone);
+
+    const existingClient = await this.userModel
+      .findOne({
+        tenantId: new Types.ObjectId(params.tenantId),
+        email: normalizedEmail,
+      })
+      .lean();
+
+    if (existingClient) {
+      if (existingClient.role !== UserRole.CLIENT) {
+        throw new ConflictException('Could not process appointment request');
+      }
+
+      const shouldUpdate =
+        existingClient.name !== params.name ||
+        (normalizedPhone && existingClient.phone !== normalizedPhone);
+
+      if (shouldUpdate) {
+        const updated = await this.userModel
+          .findByIdAndUpdate(
+            existingClient._id,
+            {
+              $set: {
+                name: params.name,
+                ...(normalizedPhone ? { phone: normalizedPhone } : {}),
+              },
+            },
+            { new: true, runValidators: true },
+          )
+          .lean();
+
+        if (updated) {
+          return updated;
+        }
+      }
+
+      return existingClient;
+    }
+
+    const randomSecret = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const passwordHash = await bcrypt.hash(randomSecret, 12);
+
+    return this.userModel.create({
+      tenantId: new Types.ObjectId(params.tenantId),
+      role: UserRole.CLIENT,
+      email: normalizedEmail,
+      passwordHash,
+      name: params.name,
+      phone: normalizedPhone,
+      isActive: true,
+    });
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<User> {
