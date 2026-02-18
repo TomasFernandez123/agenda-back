@@ -48,12 +48,19 @@ import { HealthModule } from './modules/health/health.module';
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        redis: {
-          host: configService.get<string>('app.redis.host'),
-          port: configService.get<number>('app.redis.port'),
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const redisTlsEnabled = configService.get<boolean>('app.redis.tls');
+
+        return {
+          redis: {
+            host: configService.get<string>('app.redis.host'),
+            port: configService.get<number>('app.redis.port'),
+            username: configService.get<string>('app.redis.username'),
+            password: configService.get<string>('app.redis.password'),
+            ...(redisTlsEnabled ? { tls: {} } : {}),
+          },
+        };
+      },
     }),
 
     // Rate limiting

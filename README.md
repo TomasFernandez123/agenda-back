@@ -135,6 +135,9 @@ El servidor estará disponible en `http://localhost:3000`.
 | `MONGODB_URI` | URI de conexión a MongoDB | `mongodb://localhost:27017/agenda-saas?replicaSet=rs0` |
 | `REDIS_HOST` | Host de Redis | `localhost` |
 | `REDIS_PORT` | Puerto de Redis | `6379` |
+| `REDIS_USERNAME` | Usuario Redis (opcional, según proveedor) | _(vacío)_ |
+| `REDIS_PASSWORD` | Password Redis (opcional, requerido en Redis gestionado) | _(vacío)_ |
+| `REDIS_TLS` | Habilita TLS para Redis (`true/false`) | `false` |
 | `JWT_SECRET` | Secreto para access tokens | `dev-jwt-secret` |
 | `JWT_REFRESH_SECRET` | Secreto para refresh tokens | `dev-jwt-refresh-secret` |
 | `JWT_RESET_SECRET` | Secreto para reset password token (opcional) | `JWT_SECRET` |
