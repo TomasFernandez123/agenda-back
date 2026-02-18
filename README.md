@@ -131,13 +131,16 @@ El servidor estará disponible en `http://localhost:3000`.
 | `PORT` | Puerto del servidor | `3000` |
 | `NODE_ENV` | Entorno (`development` / `production`) | `development` |
 | `CORS_ORIGIN` | Origen permitido para CORS | `http://localhost:4200` |
+| `FRONTEND_BASE_URL` | Base URL del frontend (para links de reset) | `http://localhost:4200` |
 | `MONGODB_URI` | URI de conexión a MongoDB | `mongodb://localhost:27017/agenda-saas?replicaSet=rs0` |
 | `REDIS_HOST` | Host de Redis | `localhost` |
 | `REDIS_PORT` | Puerto de Redis | `6379` |
 | `JWT_SECRET` | Secreto para access tokens | `dev-jwt-secret` |
 | `JWT_REFRESH_SECRET` | Secreto para refresh tokens | `dev-jwt-refresh-secret` |
+| `JWT_RESET_SECRET` | Secreto para reset password token (opcional) | `JWT_SECRET` |
 | `JWT_EXPIRATION` | Expiración del access token | `15m` |
 | `JWT_REFRESH_EXPIRATION` | Expiración del refresh token | `7d` |
+| `PASSWORD_RESET_EXPIRATION_SECONDS` | Vida útil del token de reset (900-3600 seg) | `1800` |
 | `SUPERADMIN_EMAIL` | Email del superadmin inicial | `admin@agenda-saas.com` |
 | `SUPERADMIN_PASSWORD` | Password del superadmin inicial | `SuperAdmin123!` |
 
@@ -253,6 +256,8 @@ src/
 | Método | Endpoint | Auth | Descripción |
 |--------|----------|------|-------------|
 | `POST` | `/auth/login` | 🔓 Público | Login, setea cookies |
+| `POST` | `/auth/forgot-password` | 🔓 Público | Solicita link de recuperación (respuesta genérica) |
+| `POST` | `/auth/reset-password` | 🔓 Público | Resetea contraseña usando token |
 | `POST` | `/auth/logout` | 🔒 JWT | Logout, limpia cookies |
 | `GET` | `/auth/me` | 🔒 JWT | Datos del usuario actual |
 | `POST` | `/auth/refresh` | 🔓 Público (cookie refresh) | Renueva access token |
@@ -280,6 +285,44 @@ curl -X POST http://localhost:3000/auth/login \
     "role": "SUPER_ADMIN",
     "name": "Super Admin"
   }
+}
+```
+
+#### `POST /auth/forgot-password`
+
+```bash
+curl -X POST http://localhost:3000/auth/forgot-password \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenantSlug": "clinica-nova",
+    "email": "usuario@clinica.com"
+  }'
+```
+
+**Respuesta (siempre genérica):**
+
+```json
+{
+  "message": "Si el email existe, te enviamos un link."
+}
+```
+
+#### `POST /auth/reset-password`
+
+```bash
+curl -X POST http://localhost:3000/auth/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "eyJhbGciOi...",
+    "newPassword": "Nueva123!"
+  }'
+```
+
+**Respuesta:**
+
+```json
+{
+  "message": "Password updated successfully"
 }
 ```
 

@@ -31,6 +31,12 @@ type EmailProfessionalInfo = {
   userId?: EmailContact;
 };
 
+type ReminderLogAppointmentInfo = {
+  client?: { name?: string; email?: string };
+  service?: { name?: string };
+  professional?: { displayName?: string };
+};
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -375,6 +381,62 @@ export class NotificationsService {
       .sort({ scheduledFor: -1 })
       .limit(100)
       .lean();
+  }
+
+  async getReminderLogs(tenantId: string, limit = 20): Promise<
+    Array<{
+      scheduledFor: Date;
+      appointment: ReminderLogAppointmentInfo;
+      channel: string;
+      status: string;
+      failureReason?: string;
+    }>
+  > {
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+
+    const jobs = await this.reminderJobModel
+      .find({ tenantId: new Types.ObjectId(tenantId) })
+      .sort({ scheduledFor: -1 })
+      .limit(safeLimit)
+      .populate({
+        path: 'appointmentId',
+        select: 'clientId serviceId professionalId',
+        populate: [
+          { path: 'clientId', select: 'name email' },
+          { path: 'serviceId', select: 'name' },
+          { path: 'professionalId', select: 'displayName' },
+        ],
+      })
+      .lean();
+
+    return jobs.map((job: any) => {
+      const appointment = job.appointmentId || {};
+
+      return {
+        scheduledFor: job.scheduledFor,
+        appointment: {
+          client: appointment.clientId
+            ? {
+                name: appointment.clientId.name,
+                email: appointment.clientId.email,
+              }
+            : undefined,
+          service: appointment.serviceId
+            ? {
+                name: appointment.serviceId.name,
+              }
+            : undefined,
+          professional: appointment.professionalId
+            ? {
+                displayName: appointment.professionalId.displayName,
+              }
+            : undefined,
+        },
+        channel: job.channel,
+        status: job.status,
+        failureReason: job.lastError || undefined,
+      };
+    });
   }
 
   private getPublicBaseUrl(): string {

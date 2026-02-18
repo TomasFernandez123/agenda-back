@@ -32,6 +32,35 @@ export class ReminderOffset {
 }
 
 @Schema({ _id: false })
+export class ReminderQuietHours {
+  @Prop({ default: false }) enabled: boolean;
+  @Prop({ default: '22:00' }) start: string;
+  @Prop({ default: '08:00' }) end: string;
+}
+
+@Schema({ _id: false })
+export class ReminderTemplate {
+  @Prop({ default: 'default' }) type: string;
+  @Prop() subject: string;
+  @Prop() body: string;
+}
+
+@Schema({ _id: false })
+export class ReminderSettings {
+  @Prop({ enum: ['CONFIRMED', 'PENDING', 'BOTH'], default: 'BOTH' })
+  appliesTo: string;
+
+  @Prop({
+    type: ReminderQuietHours,
+    default: { enabled: false, start: '22:00', end: '08:00' },
+  })
+  quietHours: ReminderQuietHours;
+
+  @Prop({ type: [ReminderTemplate], default: [] })
+  templates: ReminderTemplate[];
+}
+
+@Schema({ _id: false })
 export class Location {
   @Prop() addressLine1: string;
   @Prop() addressLine2: string;
@@ -67,6 +96,16 @@ export class Tenant {
     ],
   })
   reminderOffsets: ReminderOffset[];
+
+  @Prop({
+    type: ReminderSettings,
+    default: {
+      appliesTo: 'BOTH',
+      quietHours: { enabled: false, start: '22:00', end: '08:00' },
+      templates: [],
+    },
+  })
+  reminderSettings: ReminderSettings;
 
   @Prop({ type: Location }) location: Location;
   @Prop({ type: Profile }) profile: Profile;

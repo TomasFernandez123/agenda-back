@@ -87,6 +87,10 @@ export class UsersService {
     return user;
   }
 
+  async findByIdRaw(id: string): Promise<User | null> {
+    return this.userModel.findById(id).lean();
+  }
+
   async findByEmail(email: string, tenantId?: string): Promise<User | null> {
     const query: any = { email: this.normalizeEmail(email) };
     if (tenantId) query.tenantId = new Types.ObjectId(tenantId);
@@ -171,6 +175,38 @@ export class UsersService {
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const result = await this.userModel.findByIdAndUpdate(id, { passwordHash });
     if (!result) throw new NotFoundException('User not found');
+  }
+
+  async resetPasswordWithVersion(
+    userId: string,
+    newPassword: string,
+    expectedVersion: number,
+  ): Promise<boolean> {
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    const versionGuard =
+      expectedVersion === 0
+        ? {
+            $or: [
+              { resetPasswordVersion: 0 },
+              { resetPasswordVersion: { $exists: false } },
+            ],
+          }
+        : { resetPasswordVersion: expectedVersion };
+
+    const result = await this.userModel.updateOne(
+      {
+        _id: new Types.ObjectId(userId),
+        isActive: true,
+        ...versionGuard,
+      },
+      {
+        $set: { passwordHash },
+        $inc: { resetPasswordVersion: 1 },
+      },
+    );
+
+    return result.modifiedCount === 1;
   }
 
   async validateCredentials(

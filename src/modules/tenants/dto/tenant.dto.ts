@@ -33,6 +33,31 @@ class ReminderOffsetDto {
   @IsArray() @IsString({ each: true }) channels: string[];
 }
 
+class ReminderQuietHoursDto {
+  @IsOptional() @IsBoolean() enabled?: boolean;
+  @IsOptional() @IsString() start?: string;
+  @IsOptional() @IsString() end?: string;
+}
+
+class ReminderTemplateDto {
+  @IsOptional() @IsString() type?: string;
+  @IsOptional() @IsString() subject?: string;
+  @IsOptional() @IsString() body?: string;
+}
+
+class ReminderSettingsDto {
+  @IsOptional() @IsEnum(['CONFIRMED', 'PENDING', 'BOTH']) appliesTo?: string;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ReminderQuietHoursDto)
+  quietHours?: ReminderQuietHoursDto;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReminderTemplateDto)
+  templates?: ReminderTemplateDto[];
+}
+
 class LocationDto {
   @IsOptional() @IsString() addressLine1?: string;
   @IsOptional() @IsString() addressLine2?: string;
@@ -70,6 +95,10 @@ export class CreateTenantDto {
   reminderOffsets?: ReminderOffsetDto[];
   @IsOptional()
   @ValidateNested()
+  @Type(() => ReminderSettingsDto)
+  reminderSettings?: ReminderSettingsDto;
+  @IsOptional()
+  @ValidateNested()
   @Type(() => LocationDto)
   location?: LocationDto;
   @IsOptional() @ValidateNested() @Type(() => ProfileDto) profile?: ProfileDto;
@@ -92,6 +121,10 @@ export class UpdateTenantDto {
   @ValidateNested({ each: true })
   @Type(() => ReminderOffsetDto)
   reminderOffsets?: ReminderOffsetDto[];
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ReminderSettingsDto)
+  reminderSettings?: ReminderSettingsDto;
   @IsOptional()
   @ValidateNested()
   @Type(() => LocationDto)

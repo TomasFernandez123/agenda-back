@@ -8,6 +8,7 @@ import {
 } from '../appointments/schemas/appointment.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { NotificationsService } from './notifications.service';
+import { NotificationsController } from './notifications.controller';
 import { ReminderProcessor } from './reminder.processor';
 import { EmailService } from './email.service';
 import { TenantsModule } from '../tenants/tenants.module';
@@ -28,6 +29,7 @@ import { AuthModule } from '../auth/auth.module';
     AuditModule,
     WhatsappModule,
   ],
+  controllers: [NotificationsController],
   providers: [NotificationsService, ReminderProcessor, EmailService],
   exports: [NotificationsService],
 })
