@@ -16,11 +16,6 @@ export class WhatsAppConfig {
 
 @Schema({ _id: false })
 export class EmailConfig {
-  @Prop() host: string;
-  @Prop() port: number;
-  @Prop({ default: false }) secure: boolean;
-  @Prop() user: string;
-  @Prop() pass: string;
   @Prop() from: string;
 }
 

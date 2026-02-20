@@ -10,7 +10,7 @@ import { User, UserSchema } from '../users/schemas/user.schema';
 import { NotificationsService } from './notifications.service';
 import { NotificationsController } from './notifications.controller';
 import { ReminderProcessor } from './reminder.processor';
-import { EmailService } from './email.service';
+import { EmailModule } from './email.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { AuditModule } from '../audit/audit.module';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
@@ -28,9 +28,10 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule,
     AuditModule,
     WhatsappModule,
+    EmailModule,
   ],
   controllers: [NotificationsController],
-  providers: [NotificationsService, ReminderProcessor, EmailService],
+  providers: [NotificationsService, ReminderProcessor],
   exports: [NotificationsService],
 })
 export class NotificationsModule {}

@@ -4,11 +4,11 @@ import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { UserRole } from '../users/schemas/user.schema';
-import { EmailConfig, Tenant } from '../tenants/schemas/tenant.schema';
+import { Tenant } from '../tenants/schemas/tenant.schema';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import * as nodemailer from 'nodemailer';
+import { EmailService } from '../notifications/email.service';
 import { createHash } from 'crypto';
 
 export interface TokenPayload {
@@ -42,6 +42,7 @@ export class AuthService {
     private readonly tenantsService: TenantsService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly emailService: EmailService,
   ) {}
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
@@ -324,28 +325,7 @@ export class AuthService {
     resetUrl: string;
   }): Promise<void> {
     try {
-      const tenant = await this.tenantsService.findById(params.tenantId);
-      const emailConfig = tenant.emailConfig as EmailConfig | undefined;
-
-      if (!emailConfig?.host) {
-        this.logger.warn(
-          `No email config for tenant ${params.tenantId}; reset email skipped`,
-        );
-        return;
-      }
-
-      const transporter = nodemailer.createTransport({
-        host: emailConfig.host,
-        port: emailConfig.port || 587,
-        secure: emailConfig.secure || false,
-        auth: {
-          user: emailConfig.user,
-          pass: emailConfig.pass,
-        },
-      });
-
-      await transporter.sendMail({
-        from: emailConfig.from || emailConfig.user,
+      await this.emailService.sendEmail(params.tenantId, {
         to: params.to,
         subject: 'Recuperación de contraseña',
         text: `Hola.\n\nRecibimos una solicitud para restablecer tu contraseña de ${params.tenantName}.\n\nUsá este link para continuar: ${params.resetUrl}\n\nEste link vence pronto y solo puede usarse una vez. Si no hiciste esta solicitud, ignorá este mensaje.`,

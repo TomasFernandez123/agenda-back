@@ -1,49 +1,64 @@
-version: '3.8'
-
 services:
-  app:
+  agenda-api:
     build: .
-    ports:
-      - '${PORT:-3000}:3000'
+    container_name: agenda-api
     env_file:
-      - .env.development
+      - .env.prod
+    restart: always
     depends_on:
       mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
-    volumes:
-      - .:/app
-      - /app/node_modules
+    networks:
+      - proxy
+      - internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy" 
+      - "traefik.http.routers.agenda.rule=Host(`agenda-api.angelite.lat`)"
+      - "traefik.http.routers.agenda.entrypoints=websecure"
+      - "traefik.http.routers.agenda.tls=true"
+      - "traefik.http.routers.agenda.tls.certresolver=letsencrypt"
+      - "traefik.http.services.agenda.loadbalancer.server.port=3000"
 
   mongo:
     image: mongo:7
-    ports:
-      - '27017:27017'
+    restart: unless-stopped
     volumes:
       - mongo-data:/data/db
-    command: ['--replSet', 'rs0', '--bind_ip_all']
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+
+    networks:
+      - internal
     healthcheck:
       test: >
-        mongosh --eval "try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }) }"
+        mongosh --eval "try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }) }"
       interval: 5s
       timeout: 10s
-      retries: 5
+      retries: 10
       start_period: 10s
 
   redis:
     image: redis:7-alpine
-    ports:
-      - '6379:6379'
+    restart: unless-stopped
     volumes:
       - redis-data:/data
+    networks:
+      - internal
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
 
 volumes:
   mongo-data:
   redis-data:
+
+networks:
+  proxy:
+    external: true
+  internal:
+    driver: bridge
+

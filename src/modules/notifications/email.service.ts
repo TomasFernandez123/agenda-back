@@ -1,68 +1,56 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
+import { ConfigService } from '@nestjs/config';
+import { Resend } from 'resend';
 import { TenantsService } from '../tenants/tenants.service';
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
+  private readonly resend: Resend;
 
-  constructor(private readonly tenantsService: TenantsService) {}
+  constructor(
+    private readonly tenantsService: TenantsService,
+    private readonly configService: ConfigService,
+  ) {
+    this.resend = new Resend(
+      this.configService.get<string>('app.resendApiKey'),
+    );
+  }
 
   async sendEmail(
     tenantId: string,
     params: { to: string; subject: string; text: string; html?: string },
   ): Promise<void> {
     const tenant = await this.tenantsService.findById(tenantId);
-    const emailConfig = tenant.emailConfig;
+    const from = tenant.emailConfig?.from || 'onboarding@resend.dev';
 
     this.logger.debug(
       `Preparing email for tenant=${tenantId} to=${params.to} subject="${params.subject}"`,
     );
 
-    if (!emailConfig?.host) {
-      this.logger.warn(
-        `No email config for tenant ${tenantId}, skipping email`,
-      );
-      return;
-    }
-
-    const transporter = nodemailer.createTransport({
-      host: emailConfig.host,
-      port: emailConfig.port || 587,
-      secure: emailConfig.secure || false,
-      auth: {
-        user: emailConfig.user,
-        pass: emailConfig.pass,
-      },
-    });
-
     try {
-      const info = await transporter.sendMail({
-        from: emailConfig.from || emailConfig.user,
+      const { data, error } = await this.resend.emails.send({
+        from,
         to: params.to,
         subject: params.subject,
         text: params.text,
         html: params.html,
       });
 
-      this.logger.log(
-        `Email sent to ${params.to} for tenant ${tenantId} (messageId=${info.messageId})`,
-      );
-    } catch (error) {
-      const smtpError = error as Error & {
-        code?: string;
-        response?: string;
-        responseCode?: number;
-        command?: string;
-      };
-
-      this.logger.error(
-        `SMTP send failed for tenant=${tenantId} to=${params.to} code=${smtpError.code || 'N/A'} responseCode=${smtpError.responseCode || 'N/A'} command=${smtpError.command || 'N/A'} message=${smtpError.message}`,
-      );
-      if (smtpError.response) {
-        this.logger.error(`SMTP response: ${smtpError.response}`);
+      if (error) {
+        this.logger.error(
+          `Resend error for tenant=${tenantId} to=${params.to}: ${error.message}`,
+        );
+        throw new Error(error.message);
       }
 
+      this.logger.log(
+        `Email sent to ${params.to} for tenant ${tenantId} (id=${data?.id})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Email send failed for tenant=${tenantId} to=${params.to}: ${(error as Error).message}`,
+      );
       throw error;
     }
   }
