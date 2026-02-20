@@ -42,6 +42,8 @@ export default registerAs('app', () => ({
     ),
   },
   resendApiKey: process.env.RESEND_API_KEY || '',
+  resendFrom:
+    process.env.RESEND_FROM || 'Notificaciones <onboarding@resend.dev>',
   superadmin: {
     email: process.env.SUPERADMIN_EMAIL || 'admin@agenda-saas.com',
     password: process.env.SUPERADMIN_PASSWORD || 'SuperAdmin123!',

@@ -22,15 +22,17 @@ export class EmailService {
     params: { to: string; subject: string; text: string; html?: string },
   ): Promise<void> {
     const tenant = await this.tenantsService.findById(tenantId);
-    const from = tenant.emailConfig?.from || 'onboarding@resend.dev';
+    const from = this.configService.get<string>('app.resendFrom')!;
+    const replyTo = tenant.emailConfig?.from || undefined;
 
     this.logger.debug(
-      `Preparing email for tenant=${tenantId} to=${params.to} subject="${params.subject}"`,
+      `Preparing email for tenant=${tenantId} to=${params.to} subject="${params.subject}" replyTo=${replyTo ?? 'none'}`,
     );
 
     try {
       const { data, error } = await this.resend.emails.send({
         from,
+        ...(replyTo ? { reply_to: replyTo } : {}),
         to: params.to,
         subject: params.subject,
         text: params.text,
