@@ -2,93 +2,171 @@ import {
   Controller,
   Get,
   Post,
-  Query,
+  Delete,
   Body,
-  Param,
-  Res,
   Logger,
   HttpCode,
   HttpStatus,
+  Request,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request as ExpressRequest } from 'express';
 import { Public } from '../../common/decorators';
-import { TenantsService } from '../tenants/tenants.service';
+import { WhatsappService } from './whatsapp.service';
 import { AppointmentsService } from '../appointments/appointments.service';
-import { AuditService } from '../audit/audit.service';
-import { ParseObjectIdPipe } from '../../common/pipes/parse-objectid.pipe';
 
-@Controller('webhooks/whatsapp')
-@Public()
+interface JwtPayload {
+  tenantId: string;
+  sub: string;
+}
+
+interface AuthenticatedRequest extends ExpressRequest {
+  user: JwtPayload;
+}
+
+// ─── Webhook payload shapes from Evolution API ──────────────────────────────
+
+interface EvolutionMessageUpsert {
+  event: 'messages.upsert';
+  instance: string;
+  data: {
+    key: { remoteJid: string };
+    message?: { conversation?: string };
+  }[];
+}
+
+interface EvolutionConnectionUpdate {
+  event: 'connection.update';
+  instance: string;
+  data: { state: string };
+}
+
+type EvolutionWebhookPayload =
+  | EvolutionMessageUpsert
+  | EvolutionConnectionUpdate;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * WhatsApp controller — two sections:
+ *
+ * 1. /whatsapp/* (JWT-protected) — instance management for the current tenant
+ * 2. /webhooks/whatsapp (public)  — receives events from Evolution API
+ */
+@Controller()
 export class WhatsappController {
   private readonly logger = new Logger(WhatsappController.name);
 
   constructor(
-    private readonly tenantsService: TenantsService,
+    private readonly whatsappService: WhatsappService,
     private readonly appointmentsService: AppointmentsService,
-    private readonly auditService: AuditService,
   ) {}
 
-  @Get(':tenantId')
-  async verify(
-    @Param('tenantId', ParseObjectIdPipe) tenantId: string,
-    @Query('hub.mode') mode: string,
-    @Query('hub.verify_token') verifyToken: string,
-    @Query('hub.challenge') challenge: string,
-    @Res() res: Response,
-  ) {
-    const tenant = await this.tenantsService.findById(tenantId);
+  // ─── Instance management (JWT protected) ──────────────────────────────────
 
-    if (
-      mode === 'subscribe' &&
-      verifyToken === tenant.whatsappConfig?.verifyToken
-    ) {
-      this.logger.log(`Webhook verified for tenant ${tenantId}`);
-      return res.status(200).send(challenge);
-    }
-
-    return res.status(403).send('Forbidden');
+  /**
+   * POST /whatsapp/instance
+   * Creates a new Evolution instance for the authenticated tenant.
+   * Should be called once during tenant onboarding.
+   */
+  @Post('whatsapp/instance')
+  async createInstance(@Request() req: AuthenticatedRequest) {
+    const { tenantId } = req.user;
+    return this.whatsappService.createInstance(tenantId);
   }
 
-  @Post(':tenantId')
+  /**
+   * GET /whatsapp/instance/qr
+   * Returns the base64 QR code for WhatsApp scanning.
+   */
+  @Get('whatsapp/instance/qr')
+  async getQr(@Request() req: AuthenticatedRequest) {
+    const { tenantId } = req.user;
+    return this.whatsappService.getQrCode(tenantId);
+  }
+
+  /**
+   * GET /whatsapp/instance/status
+   * Returns the current connection status of the instance.
+   */
+  @Get('whatsapp/instance/status')
+  async getStatus(@Request() req: AuthenticatedRequest) {
+    const { tenantId } = req.user;
+    return this.whatsappService.getInstanceStatus(tenantId);
+  }
+
+  /**
+   * DELETE /whatsapp/instance
+   * Disconnects and removes the instance from Evolution API.
+   */
+  @Delete('whatsapp/instance')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteInstance(@Request() req: AuthenticatedRequest) {
+    const { tenantId } = req.user;
+    await this.whatsappService.deleteInstance(tenantId);
+  }
+
+  // ─── Webhook (public, called by Evolution API) ─────────────────────────────
+
+  /**
+   * POST /webhooks/whatsapp
+   * Receives all events from Evolution API.
+   * Evolution sends: connection.update, messages.upsert, etc.
+   */
+  @Post('webhooks/whatsapp')
+  @Public()
   @HttpCode(HttpStatus.OK)
-  async inbound(
-    @Param('tenantId', ParseObjectIdPipe) tenantId: string,
-    @Body() body: any,
-  ) {
-    this.logger.log(`Inbound WhatsApp webhook for tenant ${tenantId}`);
+  async inbound(@Body() payload: EvolutionWebhookPayload) {
+    const event = payload?.event;
+    const instance = payload?.instance;
+
+    this.logger.log(`Evolution webhook: event=${event} instance=${instance}`);
 
     try {
-      const entry = body?.entry?.[0];
-      const changes = entry?.changes?.[0];
-      const value = changes?.value;
-
-      if (!value?.messages) return { status: 'ok' };
-
-      for (const message of value.messages) {
-        const from = message.from;
-        const text =
-          message.text?.body?.toUpperCase().trim() ||
-          message.interactive?.button_reply?.id?.toUpperCase().trim();
-
-        if (!text) continue;
-
-        this.logger.log(`Received message from ${from}: ${text}`);
-
-        if (text === 'CONFIRMAR' || text.startsWith('CONFIRM_')) {
-          this.logger.log(`Confirmation request from ${from}`);
-        } else if (text === 'CANCELAR' || text.startsWith('CANCEL_')) {
-          this.logger.log(`Cancellation request from ${from}`);
-        } else if (text.startsWith('REPROGRAMAR')) {
-          const dateStr = text.replace('REPROGRAMAR', '').trim();
-          this.logger.log(`Reschedule request from ${from} to ${dateStr}`);
-        }
+      if (event === 'connection.update') {
+        const connectionPayload = payload;
+        const state = connectionPayload.data?.state ?? 'close';
+        await this.whatsappService.handleConnectionUpdate(instance, state);
+        return { status: 'ok' };
       }
-    } catch (error) {
-      this.logger.error(
-        `Error processing inbound: ${(error as Error).message}`,
-      );
+
+      if (event === 'messages.upsert') {
+        const msgPayload = payload;
+        this.handleInboundMessages(instance, msgPayload.data ?? []);
+        return { status: 'ok' };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Error processing webhook event=${event}: ${msg}`);
     }
 
     return { status: 'ok' };
+  }
+
+  // ─── Private helpers ───────────────────────────────────────────────────────
+
+  private handleInboundMessages(
+    instance: string,
+    messages: EvolutionMessageUpsert['data'],
+  ): void {
+    for (const msg of messages) {
+      const from = msg.key?.remoteJid?.replace('@s.whatsapp.net', '') ?? '';
+      const text = msg.message?.conversation?.toUpperCase().trim() ?? '';
+
+      if (!text || !from) continue;
+
+      this.logger.log(`[${instance}] Inbound from ${from}: ${text}`);
+
+      if (text === 'CONFIRMAR' || text.startsWith('CONFIRM_')) {
+        this.logger.log(`Confirmation intent from ${from}`);
+        // TODO: lookup appointment by phone + instance → confirm it
+      } else if (text === 'CANCELAR' || text.startsWith('CANCEL_')) {
+        this.logger.log(`Cancellation intent from ${from}`);
+        // TODO: lookup appointment by phone + instance → cancel it
+      } else if (text.startsWith('REPROGRAMAR')) {
+        const dateStr = text.replace('REPROGRAMAR', '').trim();
+        this.logger.log(`Reschedule intent from ${from} → ${dateStr}`);
+        // TODO: lookup appointment → reschedule
+      }
+    }
   }
 }

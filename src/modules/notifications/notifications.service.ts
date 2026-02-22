@@ -14,8 +14,9 @@ import {
 import { EmailService } from './email.service';
 import { User, UserRole } from '../users/schemas/user.schema';
 import { AuthService } from '../auth/auth.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
-type AppointmentEmailEvent = 'REQUESTED' | 'CONFIRMED' | 'CANCELLED';
+type AppointmentEmailEvent = 'REQUESTED' | 'CONFIRMED' | 'CANCELLED' | 'RESCHEDULED';
 
 type EmailContact = {
   name?: string;
@@ -50,6 +51,7 @@ export class NotificationsService {
     private readonly emailService: EmailService,
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly whatsappService: WhatsappService,
   ) {}
 
   async sendAppointmentEventEmails(
@@ -120,6 +122,12 @@ export class NotificationsService {
           accent: '#dc2626',
           badge: 'Cancelado',
         },
+        RESCHEDULED: {
+          subject: 'Turno reprogramado',
+          title: 'El turno fue reprogramado',
+          accent: '#d97706',
+          badge: 'Reprogramado',
+        },
       };
 
       const eventData = byEvent[event];
@@ -175,7 +183,7 @@ export class NotificationsService {
           const shouldAddPublicLinks =
             isPublicAppointment &&
             isClientRecipient &&
-            (event === 'REQUESTED' || event === 'CONFIRMED');
+            (event === 'REQUESTED' || event === 'CONFIRMED' || event === 'RESCHEDULED');
 
           const linksText = shouldAddPublicLinks
             ? `\n\nGestioná tu turno desde estos enlaces:\n- Cancelar turno: ${cancelUrl}${rescheduleUrl ? `\n- Reprogramar turno: ${rescheduleUrl}` : ''}`
@@ -292,6 +300,73 @@ export class NotificationsService {
     } catch (error) {
       this.logger.error(
         `Failed to send appointment event emails for ${appointmentId}: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  async sendAppointmentEventWhatsApp(
+    tenantId: string,
+    appointmentId: string,
+    event: AppointmentEmailEvent,
+  ): Promise<void> {
+    try {
+      const appointment = await this.appointmentModel
+        .findById(appointmentId)
+        .populate('clientId', 'name phone')
+        .populate('serviceId', 'name')
+        .populate('professionalId', 'displayName')
+        .lean();
+
+      if (!appointment) {
+        this.logger.warn(
+          `Appointment ${appointmentId} not found, skipping WhatsApp notification`,
+        );
+        return;
+      }
+
+      const client = (appointment.clientId || {}) as any;
+      if (!client.phone) {
+        this.logger.debug(
+          `Client has no phone, skipping WhatsApp for appointment ${appointmentId}`,
+        );
+        return;
+      }
+
+      const tenant = await this.tenantsService.findById(tenantId);
+      const service = (appointment.serviceId || {}) as any;
+      const professional = (appointment.professionalId || {}) as any;
+
+      const dateText = appointment.startAt.toLocaleDateString('es-AR');
+      const timeText = appointment.startAt.toLocaleTimeString('es-AR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const locationText =
+        tenant.location?.addressLine1 && tenant.location?.city
+          ? ` en ${tenant.location.addressLine1}, ${tenant.location.city}`
+          : '';
+
+      const baseText = `Tenés turno de ${service.name || 'N/A'} con ${professional.displayName || 'N/A'} el ${dateText} a las ${timeText}${locationText}.`;
+
+      const byEvent: Record<AppointmentEmailEvent, string> = {
+        REQUESTED: `Solicitud registrada: ${baseText} Te avisaremos cuando sea confirmado.`,
+        CONFIRMED: `Turno confirmado ✓: ${baseText}`,
+        CANCELLED: `Turno cancelado: Tu turno de ${service.name || 'N/A'} con ${professional.displayName || 'N/A'} del ${dateText} a las ${timeText} fue cancelado.`,
+        RESCHEDULED: `Turno reprogramado: ${baseText}`,
+      };
+
+      const message = byEvent[event];
+      await this.whatsappService.sendText(tenantId, client.phone, message);
+
+      this.logger.log(
+        `WhatsApp notification sent event=${event} appointment=${appointmentId} to=${client.phone}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to send WhatsApp notification for appointment ${appointmentId}: ${
+          (error as Error).message
+        }`,
       );
     }
   }

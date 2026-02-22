@@ -43,4 +43,33 @@ export class TenantsService {
     if (!tenant) throw new NotFoundException('Tenant not found');
     return tenant;
   }
+
+  async updateWhatsappConfig(
+    id: string,
+    patch: Partial<{
+      instanceName: string;
+      waStatus: string;
+    }>,
+  ): Promise<Tenant> {
+    const update: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(patch)) {
+      update[`whatsappConfig.${key}`] = val;
+    }
+    const tenant = await this.tenantModel
+      .findByIdAndUpdate(id, { $set: update }, { new: true })
+      .lean();
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    return tenant;
+  }
+
+  async findByWhatsappInstance(instanceName: string): Promise<Tenant> {
+    const tenant = await this.tenantModel
+      .findOne({ 'whatsappConfig.instanceName': instanceName })
+      .lean();
+    if (!tenant)
+      throw new NotFoundException(
+        `Tenant not found for instance ${instanceName}`,
+      );
+    return tenant;
+  }
 }

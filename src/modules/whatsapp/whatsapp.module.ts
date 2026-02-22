@@ -6,11 +6,7 @@ import { AuditModule } from '../audit/audit.module';
 import { AppointmentsModule } from '../appointments/appointments.module';
 
 @Module({
-  imports: [
-    TenantsModule,
-    AuditModule,
-    forwardRef(() => AppointmentsModule),
-  ],
+  imports: [TenantsModule, AuditModule, forwardRef(() => AppointmentsModule)],
   controllers: [WhatsappController],
   providers: [WhatsappService],
   exports: [WhatsappService],

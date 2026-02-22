@@ -5,6 +5,15 @@ export type TenantDocument = HydratedDocument<Tenant>;
 
 @Schema({ _id: false })
 export class WhatsAppConfig {
+  // Evolution API fields
+  @Prop() instanceName: string;
+  @Prop({
+    enum: ['DISCONNECTED', 'CONNECTING', 'CONNECTED'],
+    default: 'DISCONNECTED',
+  })
+  waStatus: string;
+
+  // Legacy Meta Cloud API fields (kept for compatibility)
   @Prop() wabaId: string;
   @Prop() phoneNumberId: string;
   @Prop() accessToken: string;

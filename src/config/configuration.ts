@@ -46,4 +46,9 @@ export default registerAs('app', () => ({
     email: process.env.SUPERADMIN_EMAIL || 'admin@agenda-saas.com',
     password: process.env.SUPERADMIN_PASSWORD || 'SuperAdmin123!',
   },
+  evolution: {
+    apiUrl: process.env.EVOLUTION_API_URL || 'http://104.236.244.125:8080',
+    apiKey: process.env.EVOLUTION_API_KEY || '',
+    webhookUrl: process.env.EVOLUTION_WEBHOOK_URL || '',
+  },
 }));

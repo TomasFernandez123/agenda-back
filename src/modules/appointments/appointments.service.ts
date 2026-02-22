@@ -172,6 +172,12 @@ export class AppointmentsService {
         'REQUESTED',
       );
 
+      void this.notificationsService.sendAppointmentEventWhatsApp(
+        tenantId,
+        createdAppointmentId,
+        'REQUESTED',
+      );
+
       await this.auditService.log(
         tenantId,
         null,
@@ -323,6 +329,12 @@ export class AppointmentsService {
         'REQUESTED',
       );
 
+      void this.notificationsService.sendAppointmentEventWhatsApp(
+        tenantId,
+        (appointment as any)._id.toString(),
+        'REQUESTED',
+      );
+
       return appointment;
     } finally {
       await session.endSession();
@@ -389,6 +401,12 @@ export class AppointmentsService {
       'CONFIRMED',
     );
 
+    void this.notificationsService.sendAppointmentEventWhatsApp(
+      appointment.tenantId.toString(),
+      id,
+      'CONFIRMED',
+    );
+
     return appointment;
   }
 
@@ -424,6 +442,12 @@ export class AppointmentsService {
     );
 
     await this.notificationsService.sendAppointmentEventEmails(
+      appointment.tenantId.toString(),
+      id,
+      'CANCELLED',
+    );
+
+    void this.notificationsService.sendAppointmentEventWhatsApp(
       appointment.tenantId.toString(),
       id,
       'CANCELLED',
@@ -523,6 +547,18 @@ export class AppointmentsService {
       'Appointment',
       id,
       { oldStartAt: appointment.startAt, newStartAt, newEndAt },
+    );
+
+    await this.notificationsService.sendAppointmentEventEmails(
+      tenantId,
+      id,
+      'RESCHEDULED',
+    );
+
+    void this.notificationsService.sendAppointmentEventWhatsApp(
+      tenantId,
+      id,
+      'RESCHEDULED',
     );
 
     return this.findById(id);

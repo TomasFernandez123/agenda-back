@@ -31,3 +31,10 @@ coverage
 
 # nesting
 nest-cli.json
+
+EVOLUTION.md
+
+Dockerfile
+docker-compose.yml
+docker-compose.dev.yml
+.dockerignore
