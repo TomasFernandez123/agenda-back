@@ -42,7 +42,7 @@ Backend multi-tenant para gestión de turnos/citas, construido con **NestJS**, *
               ▼            ▼            ▼
         ┌──────────┐ ┌──────────┐ ┌──────────┐
         │ WhatsApp │ │  Email   │ │  Audit   │
-        │ Cloud API│ │  SMTP    │ │  Logs    │
+        │ Cloud API│ │  Brevo   │ │  Logs    │
         └──────────┘ └──────────┘ └──────────┘
 ```
 
@@ -59,7 +59,7 @@ Backend multi-tenant para gestión de turnos/citas, construido con **NestJS**, *
 | Contraseñas | bcryptjs (12 salt rounds) |
 | Validación | class-validator + class-transformer + Joi (env vars) |
 | WhatsApp | Meta Cloud API v18.0 |
-| Email | Nodemailer (SMTP configurable por tenant) |
+| Email | Brevo Transactional API (`@getbrevo/brevo`) |
 | Seguridad | Helmet, CORS, ThrottlerModule (rate limiting) |
 | Contenedores | Docker + Docker Compose |
 
@@ -143,6 +143,7 @@ El servidor estará disponible en `http://localhost:3000`.
 | `JWT_RESET_SECRET` | Secreto para reset password token (opcional) | `JWT_SECRET` |
 | `JWT_EXPIRATION` | Expiración del access token | `15m` |
 | `JWT_REFRESH_EXPIRATION` | Expiración del refresh token | `7d` |
+| `BREVO_API_KEY` | API Key V3 para correos transaccionales | _(requerido)_ |
 | `PASSWORD_RESET_EXPIRATION_SECONDS` | Vida útil del token de reset (900-3600 seg) | `1800` |
 | `SUPERADMIN_EMAIL` | Email del superadmin inicial | `admin@agenda-saas.com` |
 | `SUPERADMIN_PASSWORD` | Password del superadmin inicial | `SuperAdmin123!` |
@@ -357,11 +358,7 @@ curl -X POST http://localhost:3000/tenants \
       "verifyToken": "mi-verify-token"
     },
     "emailConfig": {
-      "host": "smtp.gmail.com",
-      "port": 587,
-      "user": "clinica@gmail.com",
-      "pass": "app-password",
-      "from": "Clínica Salud <clinica@gmail.com>"
+      "from": "Clínica Salud <contacto@clinica.com>"
     },
     "reminderOffsets": [
       { "offsetMinutes": 1440, "channels": ["whatsapp", "email"] },
@@ -369,6 +366,8 @@ curl -X POST http://localhost:3000/tenants \
     ]
   }'
 ```
+
+> 📧 Envío centralizado: el envío técnico usa `notificaciones@syncrolab.tech` (dominio autenticado) y el nombre visible del remitente toma `tenant.name`. Si `emailConfig.from` está presente, se usa como `reply-to`.
 
 ---
 
