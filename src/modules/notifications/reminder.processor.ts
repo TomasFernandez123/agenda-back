@@ -198,7 +198,7 @@ export class ReminderProcessor {
       } else if (channel === 'email' && client.email) {
         const linksText = `\n\nGestioná tu turno desde estos enlaces:\n- Cancelar turno: ${cancelUrl}${rescheduleUrl ? `\n- Reprogramar turno: ${rescheduleUrl}` : ''}`;
         await this.emailService.sendEmail(tenantId, {
-          to: client.email,
+          to: [{ email: client.email, name: client.name }],
           subject: emailSubject,
           text: `${emailText}${linksText}`,
           html: emailHtml,

@@ -1,57 +1,91 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Resend } from 'resend';
+import {
+  SendSmtpEmail,
+  TransactionalEmailsApi,
+  TransactionalEmailsApiApiKeys,
+} from '@getbrevo/brevo';
 import { TenantsService } from '../tenants/tenants.service';
+
+type EmailRecipient = {
+  email: string;
+  name?: string;
+};
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private readonly resend: Resend;
+  private readonly brevoApi: TransactionalEmailsApi;
+  private readonly senderEmail = 'notificaciones@syncrolab.tech';
 
   constructor(
     private readonly tenantsService: TenantsService,
     private readonly configService: ConfigService,
   ) {
-    this.resend = new Resend(
-      this.configService.get<string>('app.resendApiKey'),
+    this.brevoApi = new TransactionalEmailsApi();
+    this.brevoApi.setApiKey(
+      TransactionalEmailsApiApiKeys.apiKey,
+      this.configService.get<string>('app.brevoApiKey') ?? '',
     );
   }
 
   async sendEmail(
     tenantId: string,
-    params: { to: string; subject: string; text: string; html?: string },
+    params: {
+      to: EmailRecipient[];
+      subject: string;
+      text?: string;
+      html?: string;
+    },
   ): Promise<void> {
+    if (!params.to.length) {
+      this.logger.warn(
+        `Skipping email for tenant=${tenantId} because recipients are empty`,
+      );
+      return;
+    }
+
     const tenant = await this.tenantsService.findById(tenantId);
-    const from = this.configService.get<string>('app.resendFrom')!;
-    const replyTo = tenant.emailConfig?.from || undefined;
+    const senderName = tenant.name || 'Syncro';
+    const rawFrom = tenant.emailConfig?.from?.trim();
+    // emailConfig.from may be stored as "Name <email@domain.com>" or plain "email@domain.com"
+    const replyToEmail = rawFrom
+      ? (rawFrom.match(/<([^>]+)>/)?.[1] ?? rawFrom)
+      : undefined;
+    const recipients = params.to.map((recipient) => recipient.email).join(', ');
 
     this.logger.debug(
-      `Preparing email for tenant=${tenantId} to=${params.to} subject="${params.subject}" replyTo=${replyTo ?? 'none'}`,
+      `Preparing email for tenant=${tenantId} to=${recipients} subject="${params.subject}" replyTo=${replyToEmail ?? 'none'}`,
     );
 
     try {
-      const { data, error } = await this.resend.emails.send({
-        from,
-        ...(replyTo ? { reply_to: replyTo } : {}),
-        to: params.to,
-        subject: params.subject,
-        text: params.text,
-        html: params.html,
-      });
+      const message = new SendSmtpEmail();
+      message.sender = {
+        name: senderName,
+        email: this.senderEmail,
+      };
+      message.to = params.to;
+      message.subject = params.subject;
+      message.textContent = params.text;
+      message.htmlContent = params.html;
 
-      if (error) {
-        this.logger.error(
-          `Resend error for tenant=${tenantId} to=${params.to}: ${error.message}`,
-        );
-        throw new Error(error.message);
+      if (replyToEmail) {
+        message.replyTo = {
+          email: replyToEmail,
+          name: senderName,
+        };
       }
 
-      this.logger.log(
-        `Email sent to ${params.to} for tenant ${tenantId} (id=${data?.id})`,
-      );
+      await this.brevoApi.sendTransacEmail(message);
+
+      this.logger.log(`Email sent to ${recipients} for tenant ${tenantId}`);
     } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : 'unknown provider error';
+      const responseBody =
+        (error as any)?.response?.body ?? (error as any)?.response?.data;
       this.logger.error(
-        `Email send failed for tenant=${tenantId} to=${params.to}: ${(error as Error).message}`,
+        `Brevo email send failed for tenant=${tenantId} to=${recipients}: ${reason}${responseBody ? ` — ${JSON.stringify(responseBody)}` : ''}`,
       );
       throw error;
     }
@@ -64,7 +98,7 @@ export class EmailService {
     body: string,
   ): Promise<void> {
     await this.sendEmail(tenantId, {
-      to,
+      to: [{ email: to, name: clientName }],
       subject: 'Recordatorio de turno',
       text: body,
       html: `

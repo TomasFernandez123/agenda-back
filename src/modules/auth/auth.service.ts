@@ -78,9 +78,7 @@ export class AuthService {
       },
     );
 
-    const decoded = this.jwtService.decode(resetToken) as
-      | (ResetPasswordTokenPayload & { iat?: number; exp?: number })
-      | null;
+    const decoded = this.jwtService.decode(resetToken);
 
     this.logger.log(
       `ForgotPassword token issued userId=${(user as unknown as DocWithId)._id.toString()} tenantId=${tenantId} version=${user.resetPasswordVersion || 0} expSeconds=${resetExpirationSeconds} secretFingerprint=${this.getSecretFingerprint(resetSecret)} iat=${decoded?.iat || 'N/A'} exp=${decoded?.exp || 'N/A'}`,
@@ -100,9 +98,7 @@ export class AuthService {
 
   async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
     const rawToken = dto.token?.trim();
-    const decoded = this.jwtService.decode(rawToken) as
-      | (Partial<ResetPasswordTokenPayload> & { iat?: number; exp?: number })
-      | null;
+    const decoded = this.jwtService.decode(rawToken);
 
     this.logger.log(
       `ResetPassword attempt sub=${decoded?.sub || 'N/A'} tenantId=${decoded?.tenantId || 'N/A'} purpose=${decoded?.purpose || 'N/A'} version=${decoded?.version ?? 'N/A'} iat=${decoded?.iat || 'N/A'} exp=${decoded?.exp || 'N/A'} now=${Math.floor(Date.now() / 1000)}`,
@@ -252,7 +248,7 @@ export class AuthService {
     try {
       const payload = this.jwtService.verify(token, {
         secret: this.configService.get<string>('app.jwt.secret'),
-      }) as ActionTokenPayload;
+      });
       if (payload.type !== 'action')
         throw new UnauthorizedException('Invalid token type');
       return { appointmentId: payload.appointmentId, action: payload.action };
@@ -270,7 +266,7 @@ export class AuthService {
 
       const payload = this.jwtService.verify(token, {
         secret: resetSecret,
-      }) as ResetPasswordTokenPayload;
+      });
 
       if (
         payload?.purpose !== 'reset_password' ||
@@ -326,7 +322,7 @@ export class AuthService {
   }): Promise<void> {
     try {
       await this.emailService.sendEmail(params.tenantId, {
-        to: params.to,
+        to: [{ email: params.to }],
         subject: 'Recuperación de contraseña',
         text: `Hola.\n\nRecibimos una solicitud para restablecer tu contraseña de ${params.tenantName}.\n\nUsá este link para continuar: ${params.resetUrl}\n\nEste link vence pronto y solo puede usarse una vez. Si no hiciste esta solicitud, ignorá este mensaje.`,
         html: `

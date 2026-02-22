@@ -18,6 +18,7 @@ export const validationSchema = Joi.object({
   JWT_RESET_SECRET: Joi.string().optional(),
   JWT_EXPIRATION: Joi.string().default('15m'),
   JWT_REFRESH_EXPIRATION: Joi.string().default('7d'),
+  BREVO_API_KEY: Joi.string().required(),
   PASSWORD_RESET_EXPIRATION_SECONDS: Joi.number()
     .integer()
     .min(900)

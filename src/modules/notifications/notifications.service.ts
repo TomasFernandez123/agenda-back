@@ -140,27 +140,38 @@ export class NotificationsService {
         rescheduleToken,
       );
 
-      const recipients = new Map<string, string>();
+      const recipients = new Map<string, { email: string; name?: string }>();
       for (const admin of admins) {
         if (admin.email) {
-          recipients.set(admin.email.trim().toLowerCase(), admin.email);
+          const adminEmail = admin.email.trim();
+          recipients.set(adminEmail.toLowerCase(), {
+            email: adminEmail,
+            name: admin.name,
+          });
         }
       }
       if (staffUser?.email) {
         const staffEmail = staffUser.email.trim();
-        recipients.set(staffEmail.toLowerCase(), staffEmail);
+        recipients.set(staffEmail.toLowerCase(), {
+          email: staffEmail,
+          name: staffUser.name,
+        });
       }
       if (client.email) {
         const clientEmail = client.email.trim();
-        recipients.set(clientEmail.toLowerCase(), clientEmail);
+        recipients.set(clientEmail.toLowerCase(), {
+          email: clientEmail,
+          name: client.name,
+        });
       }
 
       const recipientList = [...recipients.values()];
       const results = await Promise.allSettled(
-        recipientList.map((to) => {
+        recipientList.map((recipient) => {
           const isClientRecipient =
             !!client.email &&
-            to.trim().toLowerCase() === client.email.trim().toLowerCase();
+            recipient.email.trim().toLowerCase() ===
+              client.email.trim().toLowerCase();
           const shouldAddPublicLinks =
             isPublicAppointment &&
             isClientRecipient &&
@@ -250,7 +261,7 @@ export class NotificationsService {
           `;
 
           return this.emailService.sendEmail(tenantId, {
-            to,
+            to: [recipient],
             subject: eventData.subject,
             text,
             html,
@@ -262,7 +273,7 @@ export class NotificationsService {
       let failedCount = 0;
 
       results.forEach((result, index) => {
-        const recipient = recipientList[index];
+        const recipient = recipientList[index]?.email || 'unknown';
         if (result.status === 'fulfilled') {
           successCount += 1;
           return;
@@ -383,7 +394,10 @@ export class NotificationsService {
       .lean();
   }
 
-  async getReminderLogs(tenantId: string, limit = 20): Promise<
+  async getReminderLogs(
+    tenantId: string,
+    limit = 20,
+  ): Promise<
     Array<{
       scheduledFor: Date;
       appointment: ReminderLogAppointmentInfo;
