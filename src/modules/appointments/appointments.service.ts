@@ -28,6 +28,7 @@ import { TenantsService } from '../tenants/tenants.service';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreatePublicAppointmentDto } from './dto/create-public-appointment.dto';
+import { EventsGateway } from '../gateway/events.gateway';
 
 @Injectable()
 export class AppointmentsService {
@@ -52,6 +53,7 @@ export class AppointmentsService {
     private readonly tenantsService: TenantsService,
     private readonly usersService: UsersService,
     private readonly notificationsService: NotificationsService,
+    private readonly eventsGateway: EventsGateway,
   ) {}
 
   async createPublicByTenantSlug(
@@ -192,6 +194,15 @@ export class AppointmentsService {
           source: 'PUBLIC',
         },
       );
+
+      this.eventsGateway.emitToTenant(tenantId, 'appointment:created', {
+        appointmentId: createdAppointmentId,
+        status: AppointmentStatus.PENDING,
+        startAt,
+        endAt,
+        professionalId: dto.professionalId,
+        serviceId: dto.serviceId,
+      });
 
       return {
         appointmentId: createdAppointmentId,
@@ -335,6 +346,8 @@ export class AppointmentsService {
         'REQUESTED',
       );
 
+      this.eventsGateway.emitToTenant(tenantId, 'appointment:created', appointment);
+
       return appointment;
     } finally {
       await session.endSession();
@@ -407,6 +420,12 @@ export class AppointmentsService {
       'CONFIRMED',
     );
 
+    this.eventsGateway.emitToTenant(
+      appointment.tenantId.toString(),
+      'appointment:updated',
+      appointment,
+    );
+
     return appointment;
   }
 
@@ -451,6 +470,12 @@ export class AppointmentsService {
       appointment.tenantId.toString(),
       id,
       'CANCELLED',
+    );
+
+    this.eventsGateway.emitToTenant(
+      appointment.tenantId.toString(),
+      'appointment:updated',
+      appointment,
     );
 
     return appointment;
@@ -561,7 +586,9 @@ export class AppointmentsService {
       'RESCHEDULED',
     );
 
-    return this.findById(id);
+    const rescheduled = await this.findById(id);
+    this.eventsGateway.emitToTenant(tenantId, 'appointment:updated', rescheduled);
+    return rescheduled;
   }
 
   async markNoShow(id: string, actorUserId?: string): Promise<Appointment> {
@@ -579,6 +606,13 @@ export class AppointmentsService {
       'Appointment',
       id,
     );
+
+    this.eventsGateway.emitToTenant(
+      appointment.tenantId.toString(),
+      'appointment:updated',
+      appointment,
+    );
+
     return appointment;
   }
 
@@ -599,6 +633,12 @@ export class AppointmentsService {
       'Appointment',
       id,
       { hardDeleted: true, previousStatus: appointment.status },
+    );
+
+    this.eventsGateway.emitToTenant(
+      appointment.tenantId.toString(),
+      'appointment:deleted',
+      { id },
     );
 
     return { deleted: true, id };

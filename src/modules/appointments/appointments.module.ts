@@ -11,6 +11,7 @@ import { AuthModule } from '../auth/auth.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     TenantsModule,
     UsersModule,
     NotificationsModule,
+    GatewayModule,
   ],
   controllers: [AppointmentsController],
   providers: [AppointmentsService],

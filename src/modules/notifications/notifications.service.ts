@@ -347,13 +347,16 @@ export class NotificationsService {
           ? ` en ${tenant.location.addressLine1}, ${tenant.location.city}`
           : '';
 
-      const baseText = `Tenés turno de ${service.name || 'N/A'} con ${professional.displayName || 'N/A'} el ${dateText} a las ${timeText}${locationText}.`;
+      const serviceName = service.name || 'N/A';
+      const professionalName = professional.displayName || 'N/A';
+      const locationLine = locationText ? `\n📍 ${locationText.replace(/^ en /, '')}` : '';
+      const detailLines = `Tenés turno de *${serviceName}* con *${professionalName}*\n📅 ${dateText} a las ${timeText}${locationLine}`;
 
       const byEvent: Record<AppointmentEmailEvent, string> = {
-        REQUESTED: `Solicitud registrada: ${baseText} Te avisaremos cuando sea confirmado.`,
-        CONFIRMED: `Turno confirmado ✓: ${baseText}`,
-        CANCELLED: `Turno cancelado: Tu turno de ${service.name || 'N/A'} con ${professional.displayName || 'N/A'} del ${dateText} a las ${timeText} fue cancelado.`,
-        RESCHEDULED: `Turno reprogramado: ${baseText}`,
+        REQUESTED: `📋 *Solicitud registrada*\n${detailLines}\n\nTe avisaremos cuando sea confirmado.`,
+        CONFIRMED: `✅ *Turno confirmado*\n${detailLines}`,
+        CANCELLED: `❌ *Turno cancelado*\nTu turno de *${serviceName}* con *${professionalName}* del ${dateText} a las ${timeText} fue cancelado.`,
+        RESCHEDULED: `🔄 *Turno reprogramado*\n${detailLines}`,
       };
 
       const message = byEvent[event];

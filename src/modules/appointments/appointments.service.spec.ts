@@ -69,7 +69,11 @@ describe('AppointmentsService public booking', () => {
   } as any;
   const notificationsService = {
     scheduleReminders: jest.fn(async () => undefined),
+    sendAppointmentEventEmails: jest.fn(async () => undefined),
+    sendAppointmentEventWhatsApp: jest.fn(async () => undefined),
+    cancelReminders: jest.fn(async () => undefined),
   } as any;
+  const eventsGateway = { emitToTenant: jest.fn() } as any;
 
   let serviceInstance: AppointmentsService;
 
@@ -88,6 +92,7 @@ describe('AppointmentsService public booking', () => {
       tenantsService,
       usersService,
       notificationsService,
+      eventsGateway,
     );
   });
 

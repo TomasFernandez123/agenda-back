@@ -93,19 +93,21 @@ export class ReminderProcessor {
       const isAlreadyConfirmed =
         appointment.status === AppointmentStatus.CONFIRMED;
 
-      const baseText = `Tenés turno de ${service.name} con ${professional.displayName} el ${dateText} a las ${timeText}${locationText}.`;
+      const locationLine = locationText ? `\n📍 ${locationText.replace(/^ en /, '')}` : '';
+      const detailLines = `Tenés turno de *${service.name}* con *${professional.displayName}*\n📅 ${dateText} a las ${timeText}${locationLine}`;
 
       const whatsappMessage = isAlreadyConfirmed
-        ? `Recordatorio: ${baseText} Tu turno ya está confirmado.`
-        : `Recordatorio: ${baseText} Si necesitás cambios, respondé CANCELAR para cancelar o REPROGRAMAR para solicitar reprogramación.`;
+        ? `🔔 *Recordatorio de turno*\n${detailLines}\n\n✅ Tu turno ya está confirmado.`
+        : `🔔 *Recordatorio de turno*\n${detailLines}\n\nTu turno sigue pendiente. Si necesitás cambios, respondé *CANCELAR* o *REPROGRAMAR*.`;
 
       const emailSubject = isAlreadyConfirmed
         ? 'Recordatorio de turno confirmado'
         : 'Recordatorio de turno';
 
+      const plainBaseText = `Tenés turno de ${service.name} con ${professional.displayName} el ${dateText} a las ${timeText}${locationText}.`;
       const emailText = isAlreadyConfirmed
-        ? `Recordatorio: ${baseText} Tu turno ya está confirmado.`
-        : `Recordatorio: ${baseText} Si necesitás cambios, podés responder CANCELAR para cancelar o REPROGRAMAR para solicitar reprogramación.`;
+        ? `Recordatorio: ${plainBaseText} Tu turno ya está confirmado.`
+        : `Recordatorio: ${plainBaseText} Si necesitás cambios, podés responder CANCELAR para cancelar o REPROGRAMAR para solicitar reprogramación.`;
 
       const statusBadge = isAlreadyConfirmed ? 'Confirmado' : 'Pendiente';
       const accentColor = isAlreadyConfirmed ? '#059669' : '#2563eb';
