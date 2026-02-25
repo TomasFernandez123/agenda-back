@@ -106,6 +106,7 @@ export class AppointmentsService {
       dto.professionalId,
       startAt,
       endAt,
+      tenant.timezone ?? 'UTC',
     );
     if (!isAvailable) {
       throw new ConflictException('Selected time slot is not available');
@@ -254,11 +255,13 @@ export class AppointmentsService {
     const endAt = addMinutes(startAt, service.durationMinutes);
 
     // 2. Check professional availability
+    const tenant = await this.tenantsService.findById(tenantId);
     const isAvailable = await this.availabilityService.isSlotAvailable(
       tenantId,
       dto.professionalId,
       startAt,
       endAt,
+      tenant?.timezone ?? 'UTC',
     );
     if (!isAvailable) {
       throw new BadRequestException(
@@ -522,11 +525,13 @@ export class AppointmentsService {
     const newEndAt = addMinutes(newStartAt, service.durationMinutes);
 
     // Check availability
+    const tenant = await this.tenantsService.findById(tenantId);
     const isAvailable = await this.availabilityService.isSlotAvailable(
       tenantId,
       appointment.professionalId.toString(),
       newStartAt,
       newEndAt,
+      tenant?.timezone ?? 'UTC',
     );
     if (!isAvailable) {
       throw new BadRequestException(
