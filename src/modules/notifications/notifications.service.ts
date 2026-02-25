@@ -97,10 +97,12 @@ export class NotificationsService {
         {}) as unknown as EmailProfessionalInfo;
       const staffUser = professional.userId;
 
-      const dateText = appointment.startAt.toLocaleDateString('es-AR');
+      const tz = tenant?.timezone ?? 'America/Argentina/Buenos_Aires';
+      const dateText = appointment.startAt.toLocaleDateString('es-AR', { timeZone: tz });
       const timeText = appointment.startAt.toLocaleTimeString('es-AR', {
         hour: '2-digit',
         minute: '2-digit',
+        timeZone: tz,
       });
 
       const byEvent = {
@@ -336,10 +338,12 @@ export class NotificationsService {
       const service = (appointment.serviceId || {}) as any;
       const professional = (appointment.professionalId || {}) as any;
 
-      const dateText = appointment.startAt.toLocaleDateString('es-AR');
+      const tz = tenant?.timezone ?? 'America/Argentina/Buenos_Aires';
+      const dateText = appointment.startAt.toLocaleDateString('es-AR', { timeZone: tz });
       const timeText = appointment.startAt.toLocaleTimeString('es-AR', {
         hour: '2-digit',
         minute: '2-digit',
+        timeZone: tz,
       });
 
       const locationText =

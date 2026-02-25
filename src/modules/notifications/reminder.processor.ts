@@ -84,10 +84,12 @@ export class ReminderProcessor {
         if (tenant.location.city) locationText += `, ${tenant.location.city}`;
       }
 
-      const dateText = appointment.startAt.toLocaleDateString('es-AR');
+      const tz = tenant?.timezone ?? 'America/Argentina/Buenos_Aires';
+      const dateText = appointment.startAt.toLocaleDateString('es-AR', { timeZone: tz });
       const timeText = appointment.startAt.toLocaleTimeString('es-AR', {
         hour: '2-digit',
         minute: '2-digit',
+        timeZone: tz,
       });
 
       const isAlreadyConfirmed =
