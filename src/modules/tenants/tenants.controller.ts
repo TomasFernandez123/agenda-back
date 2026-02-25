@@ -7,7 +7,10 @@ import {
   Param,
   BadRequestException,
   NotFoundException,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
 import { Roles, Role, CurrentUser, Public } from '../../common/decorators';
@@ -15,6 +18,7 @@ import { ParseObjectIdPipe } from '../../common/pipes/parse-objectid.pipe';
 import { ProfessionalsService } from '../professionals/professionals.service';
 import { ServicesService } from '../services/services.service';
 import { AvailabilityService } from '../availability/availability.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Controller('tenants')
 export class TenantsController {
@@ -23,6 +27,7 @@ export class TenantsController {
     private readonly professionalsService: ProfessionalsService,
     private readonly servicesService: ServicesService,
     private readonly availabilityService: AvailabilityService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   @Post()
@@ -56,6 +61,48 @@ export class TenantsController {
       throw new BadRequestException('User does not belong to a tenant');
     }
     return this.tenantsService.update(user.tenantId, dto);
+  }
+
+  @Post('me/logo')
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
+  @UseInterceptors(FileInterceptor('file', { storage: undefined }))
+  async uploadLogo(
+    @CurrentUser() user: any,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!user.tenantId) {
+      throw new BadRequestException('User does not belong to a tenant');
+    }
+    const url = await this.cloudinaryService.uploadImage(
+      file,
+      'logos',
+      `tenant_${user.tenantId}_logo`,
+    );
+    await this.tenantsService.update(user.tenantId, {
+      profile: { logoUrl: url } as any,
+    });
+    return { url };
+  }
+
+  @Post('me/background-image')
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
+  @UseInterceptors(FileInterceptor('file', { storage: undefined }))
+  async uploadBackgroundImage(
+    @CurrentUser() user: any,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!user.tenantId) {
+      throw new BadRequestException('User does not belong to a tenant');
+    }
+    const url = await this.cloudinaryService.uploadImage(
+      file,
+      'backgrounds',
+      `tenant_${user.tenantId}_background`,
+    );
+    await this.tenantsService.update(user.tenantId, {
+      profile: { theme: { backgroundImageUrl: url } } as any,
+    });
+    return { url };
   }
 
   @Get(':id')

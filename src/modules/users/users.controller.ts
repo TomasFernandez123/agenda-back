@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   BadRequestException,
@@ -65,5 +66,11 @@ export class UsersController {
     @Body() dto: ChangePasswordDto,
   ) {
     return this.usersService.changePassword(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  remove(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.usersService.remove(id);
   }
 }

@@ -6,6 +6,8 @@ import {
   ValidateNested,
   IsNumber,
   IsBoolean,
+  IsHexColor,
+  IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -63,12 +65,25 @@ class LocationDto {
   @IsOptional() @IsString() googleMapsUrl?: string;
 }
 
+class ThemeDto {
+  @IsOptional() @IsHexColor() primaryColor?: string;
+  @IsOptional() @IsHexColor() accentColor?: string;
+  @IsOptional() @IsHexColor() backgroundColor?: string;
+  @IsOptional() @IsUrl() backgroundImageUrl?: string;
+  @IsOptional() @IsUrl() logoUrl?: string;
+  @IsOptional() @IsString() fontFamily?: string;
+  @IsOptional()
+  @IsEnum(['none', 'sm', 'md', 'lg', 'full'])
+  borderRadius?: string;
+}
+
 class ProfileDto {
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() logoUrl?: string;
   @IsOptional() @IsBoolean() bookingEnabled?: boolean;
   @IsOptional() @IsString() bookingPageTitle?: string;
   @IsOptional() @IsString() bookingPageDescription?: string;
+  @IsOptional() @ValidateNested() @Type(() => ThemeDto) theme?: ThemeDto;
 }
 
 export class CreateTenantDto {

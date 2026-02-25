@@ -1,4 +1,11 @@
-import { IsString, IsOptional, IsNumber, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  IsArray,
+  IsMongoId,
+} from 'class-validator';
 
 export class CreateProfessionalDto {
   @IsString() userId: string;
@@ -6,6 +13,7 @@ export class CreateProfessionalDto {
   @IsOptional() @IsNumber() minCancelMinutes?: number;
   @IsOptional() @IsNumber() minRescheduleMinutes?: number;
   @IsOptional() @IsBoolean() allowDeposit?: boolean;
+  @IsOptional() @IsArray() @IsMongoId({ each: true }) serviceIds?: string[];
 }
 
 export class UpdateProfessionalDto {
@@ -14,4 +22,5 @@ export class UpdateProfessionalDto {
   @IsOptional() @IsNumber() minRescheduleMinutes?: number;
   @IsOptional() @IsBoolean() allowDeposit?: boolean;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsArray() @IsMongoId({ each: true }) serviceIds?: string[];
 }

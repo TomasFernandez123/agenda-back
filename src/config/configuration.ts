@@ -51,4 +51,9 @@ export default registerAs('app', () => ({
     apiKey: process.env.EVOLUTION_API_KEY || '',
     webhookUrl: process.env.EVOLUTION_WEBHOOK_URL || '',
   },
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+  },
 }));

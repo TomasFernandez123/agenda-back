@@ -25,6 +25,9 @@ export class Professional {
   @Prop({ required: true })
   displayName: string;
 
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Service' }], default: [] })
+  serviceIds: Types.ObjectId[];
+
   @Prop({ type: ProfessionalRules, default: () => ({}) })
   rules: ProfessionalRules;
 

@@ -76,12 +76,28 @@ export class Location {
 }
 
 @Schema({ _id: false })
+export class TenantTheme {
+  @Prop() primaryColor: string;
+  @Prop() accentColor: string;
+  @Prop() backgroundColor: string;
+  @Prop() backgroundImageUrl: string;
+  @Prop() logoUrl: string;
+  @Prop() fontFamily: string;
+  @Prop({
+    enum: ['none', 'sm', 'md', 'lg', 'full'],
+    default: 'md',
+  })
+  borderRadius: string;
+}
+
+@Schema({ _id: false })
 export class Profile {
   @Prop() phone: string;
   @Prop() logoUrl: string;
   @Prop({ default: true }) bookingEnabled: boolean;
   @Prop() bookingPageTitle: string;
   @Prop() bookingPageDescription: string;
+  @Prop({ type: TenantTheme }) theme: TenantTheme;
 }
 
 @Schema({ timestamps: true })

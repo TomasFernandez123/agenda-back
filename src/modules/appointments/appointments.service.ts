@@ -90,6 +90,16 @@ export class AppointmentsService {
       throw new NotFoundException('Requested resource was not found');
     }
 
+    const offersService = await this.professionalsService.offersService(
+      dto.professionalId,
+      dto.serviceId,
+    );
+    if (!offersService) {
+      throw new BadRequestException(
+        'El profesional seleccionado no ofrece ese servicio',
+      );
+    }
+
     const endAt = addMinutes(startAt, service.durationMinutes);
     const isAvailable = await this.availabilityService.isSlotAvailable(
       tenantId,

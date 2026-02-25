@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
@@ -6,6 +6,7 @@ import { TenantsService } from '../tenants/tenants.service';
 import { UserRole } from '../users/schemas/user.schema';
 import { Tenant } from '../tenants/schemas/tenant.schema';
 import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { EmailService } from '../notifications/email.service';
@@ -44,6 +45,58 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly emailService: EmailService,
   ) {}
+
+  async register(dto: RegisterDto) {
+    const tenant = await this.tenantsService.findBySlug(dto.tenantSlug);
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+
+    const tenantId = (tenant as Tenant & DocWithId)._id.toString();
+
+    const user = await this.usersService.create(tenantId, {
+      name: dto.name,
+      email: dto.email,
+      password: dto.password,
+      phone: dto.phone,
+      role: UserRole.CLIENT,
+    });
+
+    const payload: TokenPayload = {
+      sub: (user as unknown as DocWithId)._id.toString(),
+      email: user.email,
+      role: user.role,
+      tenantId,
+    };
+
+    const accessOptions: JwtSignOptions = {
+      secret: this.configService.get<string>('app.jwt.secret'),
+      expiresIn:
+        this.configService.get<number>('app.jwt.expirationSeconds') || 900,
+    };
+
+    const refreshOptions: JwtSignOptions = {
+      secret: this.configService.get<string>('app.jwt.refreshSecret'),
+      expiresIn:
+        this.configService.get<number>('app.jwt.refreshExpirationSeconds') ||
+        604800,
+    };
+
+    const accessToken = this.jwtService.sign(
+      payload as any as Record<string, unknown>,
+      accessOptions,
+    );
+    const refreshToken = this.jwtService.sign(
+      payload as any as Record<string, unknown>,
+      refreshOptions,
+    );
+
+    this.logger.log(
+      `Client registered: userId=${payload.sub} tenantId=${tenantId}`,
+    );
+
+    return { accessToken, refreshToken, user: { ...payload, name: user.name } };
+  }
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
     const genericResponse = {

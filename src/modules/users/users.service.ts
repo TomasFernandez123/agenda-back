@@ -171,6 +171,12 @@ export class UsersService {
     return user;
   }
 
+  async remove(id: string): Promise<{ message: string }> {
+    const user = await this.userModel.findByIdAndDelete(id);
+    if (!user) throw new NotFoundException('User not found');
+    return { message: 'User deleted successfully' };
+  }
+
   async changePassword(id: string, dto: ChangePasswordDto): Promise<void> {
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const result = await this.userModel.findByIdAndUpdate(id, { passwordHash });

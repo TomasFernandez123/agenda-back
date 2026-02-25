@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
 import { ServicesService } from './services.service';
 import { CreateServiceDto, UpdateServiceDto } from './dto/service.dto';
 import { Roles, Role, CurrentUser } from '../../common/decorators';
@@ -33,5 +33,11 @@ export class ServicesController {
     @Body() dto: UpdateServiceDto,
   ) {
     return this.servicesService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  remove(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.servicesService.remove(id);
   }
 }

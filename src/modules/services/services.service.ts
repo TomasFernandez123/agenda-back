@@ -2,11 +2,15 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Service } from './schemas/service.schema';
+import { Professional } from '../professionals/schemas/professional.schema';
 import { CreateServiceDto, UpdateServiceDto } from './dto/service.dto';
 
 @Injectable()
 export class ServicesService {
-  constructor(@InjectModel(Service.name) private serviceModel: Model<Service>) {}
+  constructor(
+    @InjectModel(Service.name) private serviceModel: Model<Service>,
+    @InjectModel(Professional.name) private professionalModel: Model<Professional>,
+  ) {}
 
   async create(tenantId: string, dto: CreateServiceDto): Promise<Service> {
     return this.serviceModel.create({
@@ -47,5 +51,16 @@ export class ServicesService {
     const service = await this.serviceModel.findByIdAndUpdate(id, { $set: updateData }, { new: true }).lean();
     if (!service) throw new NotFoundException('Service not found');
     return service;
+  }
+
+  async remove(id: string): Promise<{ message: string }> {
+    const service = await this.serviceModel.findByIdAndDelete(id).lean();
+    if (!service) throw new NotFoundException('Service not found');
+    // Remove this service from all professionals that had it assigned
+    await this.professionalModel.updateMany(
+      { serviceIds: new Types.ObjectId(id) },
+      { $pull: { serviceIds: new Types.ObjectId(id) } },
+    );
+    return { message: 'Service deleted successfully' };
   }
 }
