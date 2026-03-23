@@ -1,4 +1,4 @@
-# 📅 Agenda SaaS — Backend Multi-Tenant
+# Agenda SaaS — Backend Multi-Tenant
 
 Backend multi-tenant para gestión de turnos/citas, construido con **NestJS**, **MongoDB** (Mongoose) y **Redis** (BullMQ). Incluye autenticación JWT con cookies httpOnly, recordatorios por **WhatsApp** (Cloud API) y **email**, prevención de solapamiento con **transacciones MongoDB**, y un sistema de auditoría completo.
 
@@ -704,7 +704,3 @@ SUPERADMIN_PASSWORD=<password-seguro>
 ```
 
 ---
-
-## 📄 Licencia
-
-Proyecto privado. Todos los derechos reservados.
